@@ -1,0 +1,19 @@
+{
+  "name": "ltc-vending-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Discord Components v2 + Litecoin 대행 출금 자판기 (독립 프로젝트)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "register": "node register-commands.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  }
+}

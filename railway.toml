@@ -1,0 +1,15 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = ["sh", "start.sh"]
+healthcheckPath = "/health"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
+[[services]]
+name = "ltc-bot"
+
+[[services.ports]]
+port = 9332
+protocol = "TCP"
