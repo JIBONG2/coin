@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# 건강검사 서버 시작
+echo "건강검사 서버 시작..."
+cd /app
+node health-server.js &
+HEALTH_PID=$!
+
 # Litecoin Core 시작
 echo "Litecoin Core 시작..."
 litecoind -conf=/root/.litecoin/litecoin.conf -daemon
@@ -21,6 +27,9 @@ litecoin-cli -conf=/root/.litecoin/litecoin.conf getwalletinfo
 # Discord 봇 시작
 echo "Discord 봇 시작..."
 cd /app
-npm start
+node index.js
 
 echo "모든 서비스 실행 완료!"
+
+# 프로세스 유지
+wait $HEALTH_PID
