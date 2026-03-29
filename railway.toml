@@ -6,3 +6,13 @@ dockerfilePath = "Dockerfile"
 startCommand = "sh start.sh"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
+
+[[services]]
+name = "web"
+
+[[services.ports]]
+port = 8787
+
+[[healthChecks]]
+path = "/health"
+port = 8787
