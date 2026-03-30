@@ -1,40 +1,44 @@
 #!/bin/bash
 
+# Railway healthcheck 통과를 위해 앱 포트를 먼저 연다.
+export WEBHOOK_PORT="${PORT:-${WEBHOOK_PORT:-8787}}"
+
 # Litecoin Core 시작
 echo "Litecoin Core 시작..."
-litecoind -conf=/root/.litecoin/litecoin.conf -daemon
+litecoind -conf=/root/.litecoin/litecoin.conf -daemon || true
 
-# 블록체인 동기화 대기
-echo "블록체인 동기화 대기..."
-sleep 60
+# 지갑 준비는 백그라운드에서 재시도 (앱 기동 지연 방지)
+(
+  WALLET_NAME="${LITECOIN_RPC_WALLET:-default}"
+  echo "지갑 로드 시도: ${WALLET_NAME}"
 
-# 지갑 로드 (Litecoin Core 0.21+는 기본 지갑 자동 로드 안 됨)
-WALLET_NAME="${LITECOIN_RPC_WALLET:-default}"
-echo "지갑 로드 시도: ${WALLET_NAME}"
-
-# 이미지에는 wallet.dat를 default 경로로 복사해 두므로,
-# 런타임 지갑명이 다르면(default -> juju 등) 대상 폴더로 1회 복사
-if [ "${WALLET_NAME}" != "default" ]; then
+  if [ "${WALLET_NAME}" != "default" ]; then
     mkdir -p "/root/.litecoin/wallets/${WALLET_NAME}"
     if [ ! -f "/root/.litecoin/wallets/${WALLET_NAME}/wallet.dat" ] && [ -f "/root/.litecoin/wallets/default/wallet.dat" ]; then
-        cp "/root/.litecoin/wallets/default/wallet.dat" "/root/.litecoin/wallets/${WALLET_NAME}/wallet.dat"
-        chmod 600 "/root/.litecoin/wallets/${WALLET_NAME}/wallet.dat" || true
+      cp "/root/.litecoin/wallets/default/wallet.dat" "/root/.litecoin/wallets/${WALLET_NAME}/wallet.dat"
+      chmod 600 "/root/.litecoin/wallets/${WALLET_NAME}/wallet.dat" || true
     fi
-fi
+  fi
 
-litecoin-cli -conf=/root/.litecoin/litecoin.conf loadwallet "${WALLET_NAME}" >/dev/null 2>&1 || true
+  i=0
+  until litecoin-cli -conf=/root/.litecoin/litecoin.conf loadwallet "${WALLET_NAME}" >/dev/null 2>&1; do
+    i=$((i+1))
+    if [ $i -ge 30 ]; then
+      echo "지갑 로드 실패(30회 재시도). 이후 RPC 미연동으로 동작할 수 있습니다."
+      break
+    fi
+    sleep 2
+  done
 
-# 지갑 잠금 해제 (비밀번호가 있는 경우)
-if [ -n "$WALLET_PASSWORD" ]; then
-    echo "지갑 잠금 해제..."
-    litecoin-cli -conf=/root/.litecoin/litecoin.conf walletpassphrase "$WALLET_PASSWORD" 60
-fi
+  if [ -n "$WALLET_PASSWORD" ]; then
+    litecoin-cli -conf=/root/.litecoin/litecoin.conf walletpassphrase "$WALLET_PASSWORD" 60 >/dev/null 2>&1 || true
+  fi
 
-# 지갑 상태 확인
-echo "지갑 상태 확인..."
-litecoin-cli -conf=/root/.litecoin/litecoin.conf getwalletinfo
+  echo "지갑 상태 확인..."
+  litecoin-cli -conf=/root/.litecoin/litecoin.conf getwalletinfo || true
+) &
 
-# Discord 봇 시작
+# Discord 봇 시작 (health endpoint 포함)
 echo "Discord 봇 시작..."
 cd /app
 node index.js
