@@ -126,8 +126,11 @@ function buildCryptoSendFailEmbed(payload, errMsg) {
 
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 const CONFIG_EXAMPLE_PATH = path.join(__dirname, 'config.example.json');
-const DATA_DIR_BOT = path.join(__dirname, 'data');
+const DATA_DIR_BOT = process.env.DATA_DIR
+  ? path.resolve(String(process.env.DATA_DIR))
+  : path.join(__dirname, 'data');
 const OTC_PANEL_FILE = path.join(DATA_DIR_BOT, 'otcPanelByGuild.json');
+let walletBalanceWatcherTimer = null;
 
 function ensureDataDirBot() {
   if (!fs.existsSync(DATA_DIR_BOT)) fs.mkdirSync(DATA_DIR_BOT, { recursive: true });
@@ -265,6 +268,32 @@ async function refreshOtcPanelMessages() {
     return;
   }
   await applyOtcPanelPayloadToTrackedMessages(payload);
+}
+
+function getWalletBalanceWatchIntervalMs() {
+  const sec = Number(process.env.WALLET_BALANCE_WATCH_SECONDS);
+  if (Number.isFinite(sec) && sec >= 3) return Math.min(300, sec) * 1000;
+  return 10_000;
+}
+
+function startWalletBalanceWatcher() {
+  if (walletBalanceWatcherTimer) clearInterval(walletBalanceWatcherTimer);
+  walletBalanceWatcherTimer = setInterval(async () => {
+    if (!client?.isReady?.()) return;
+    try {
+      const bal = await ltc.getWalletBalanceLtc();
+      if (bal == null) return;
+      const cur = ltc.roundLtc8(bal);
+      if (prevLtcInventoryForInflowAlert == null) {
+        prevLtcInventoryForInflowAlert = cur;
+        return;
+      }
+      if (Math.abs(cur - prevLtcInventoryForInflowAlert) < 0.00000001) return;
+      await refreshOtcPanelMessages();
+    } catch (e) {
+      console.warn('[재고 감시]', e.message || e);
+    }
+  }, getWalletBalanceWatchIntervalMs());
 }
 
 /** 전송 확인 대기 (버튼 15분) */
@@ -1059,6 +1088,7 @@ client.once(Events.ClientReady, async (c) => {
   } else {
     console.log('[패널] 자동 갱신 끔 (PANEL_AUTO_REFRESH=0). 패널 올릴 때만 API 호출');
   }
+  startWalletBalanceWatcher();
 
   const reqV = String(process.env.REQUIRE_USER_VERIFICATION ?? '1').trim().toLowerCase();
   const wantsAuth = !['0', 'false', 'off', 'no'].includes(reqV);
