@@ -1,0 +1,30 @@
+{
+  "vendingRoles": {
+    "memberRoleId": "",
+    "tierRoleIds": {
+      "BUYER": "",
+      "BRONZE": "",
+      "SILVER": "",
+      "GOLD": "",
+      "PLATINUM": "",
+      "DIAMOND": ""
+    }
+  },
+  "inventoryInflowChannelId": "",
+  "inventoryInflowPingRoleId": "",
+  "chargeApprovalChannelId": "",
+  "bank": {
+    "bankName": "케이뱅크",
+    "accountNumber": "000-0000-0000-00",
+    "accountHolder": "예금주명",
+    "notice": ""
+  },
+  "panel": {
+    "title": "24시간 자동 코인 송금 시스템",
+    "subtitle": "💎 쥬코인대행 OTC 💎",
+    "description": "실시간 시세와 김프를 반영한 안전한 송금 서비스입니다.",
+    "imageUrl": "",
+    "footer": "쥬코인대행 OTC · 봇 오류 시 관리자에게 문의 바랍니다."
+  },
+  "products": []
+}
