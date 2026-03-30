@@ -25,8 +25,6 @@ app.listen(PORT, () => {
   console.log(`Health check server running on port ${PORT}`);
 });
 
-// 30초 후 메인 프로세스 시작
-setTimeout(() => {
-  console.log('Starting main processes...');
-  require('./index.js');
-}, 30000);
+// NOTE:
+// 메인 봇 프로세스는 start.sh 에서 별도로 기동합니다.
+// 여기서는 health endpoint 전용 서버 역할만 유지합니다.
