@@ -1,7 +1,9 @@
 FROM ubuntu:22.04
 
-# Litecoin Core 설치
-RUN apt-get update && apt-get install -y wget ca-certificates curl gnupg nodejs npm git
+# Node.js 20 + required packages
+RUN apt-get update && apt-get install -y wget ca-certificates curl gnupg git
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+RUN apt-get install -y nodejs
 
 # Litecoin Core 다운로드 및 설치
 RUN wget https://download.litecoin.org/litecoin-0.21.2.1/linux/litecoin-0.21.2.1-x86_64-linux-gnu.tar.gz
