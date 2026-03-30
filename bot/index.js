@@ -125,6 +125,7 @@ function buildCryptoSendFailEmbed(payload, errMsg) {
 }
 
 const CONFIG_PATH = path.join(__dirname, 'config.json');
+const CONFIG_EXAMPLE_PATH = path.join(__dirname, 'config.example.json');
 const DATA_DIR_BOT = path.join(__dirname, 'data');
 const OTC_PANEL_FILE = path.join(DATA_DIR_BOT, 'otcPanelByGuild.json');
 
@@ -278,11 +279,16 @@ function prunePendingSends() {
 }
 
 function loadConfig() {
-  if (!fs.existsSync(CONFIG_PATH)) {
-    console.error('config.json 이 없습니다. config.example.json 을 복사하세요.');
+  const usingExampleConfig = !fs.existsSync(CONFIG_PATH) && fs.existsSync(CONFIG_EXAMPLE_PATH);
+  if (!fs.existsSync(CONFIG_PATH) && !usingExampleConfig) {
+    console.error('config.json/config.example.json 이 모두 없습니다. 설정 파일을 확인하세요.');
     process.exit(1);
   }
-  const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+  const pickedPath = usingExampleConfig ? CONFIG_EXAMPLE_PATH : CONFIG_PATH;
+  if (usingExampleConfig) {
+    console.warn('[설정] config.json 이 없어 config.example.json 으로 실행합니다. 운영 배포에서는 config.json 사용을 권장합니다.');
+  }
+  const raw = JSON.parse(fs.readFileSync(pickedPath, 'utf8'));
   const products = Array.isArray(raw.products) ? raw.products : [];
   const panel = raw.panel && typeof raw.panel === 'object' ? raw.panel : {};
   const bank = raw.bank && typeof raw.bank === 'object' ? raw.bank : {};
@@ -344,9 +350,9 @@ function canApproveCharges(interaction) {
 function formatBankLines() {
   const b = config.bank || {};
   const lines = [];
-  lines.push(`🏦 은행: **${b.bankName || 'NH농협은행'}**`);
-  if (b.accountNumber) lines.push(`📋 계좌번호: **${b.accountNumber}**`);
-  if (b.accountHolder) lines.push(`👤 예금주: **${b.accountHolder}**`);
+  lines.push(`은행 **${b.bankName || 'NH농협은행'}**`);
+  if (b.accountNumber) lines.push(`계좌번호 **${b.accountNumber}**`);
+  if (b.accountHolder) lines.push(`예금주 **${b.accountHolder}**`);
   if (b.notice) lines.push(String(b.notice));
   if (!b.accountNumber && !b.accountHolder) {
     lines.push('`config.json`의 **bank** 항목에 계좌 정보를 넣어 주세요.');
@@ -377,10 +383,14 @@ function buildChargeSubmitConfirmText(depositorName, amount, pendingId, approval
     '',
     '아래 계좌로 **위 금액·이름 그대로** 입금해 주세요.',
     '',
-    '',
     formatBankLines(),
     '',
-    '',
+    ...(approvalOn
+      ? [
+          '입금 문자가 연동되어 있으면 **자동 매칭**으로 먼저 반영될 수 있어요. (그 경우 관리자 패널의 해당 신청은 자동으로 소진됩니다.)',
+          '',
+        ]
+      : []),
     timeLine,
   ]
     .filter((x) => x != null && x !== '')
@@ -934,13 +944,25 @@ const depositApp = createDepositServer((result) => {
 });
 mountUserAuth(depositApp);
 
-const WEBHOOK_PORT = Number(process.env.WEBHOOK_PORT || 8787);
-if (WEBHOOK_PORT > 0) {
-  depositApp.listen(WEBHOOK_PORT, () => {
+const HTTP_PORT = Number(process.env.PORT || process.env.WEBHOOK_PORT || 8787);
+const HTTP_HOST = process.env.HTTP_HOST || '0.0.0.0';
+if (HTTP_PORT > 0) {
+  depositApp.listen(HTTP_PORT, HTTP_HOST, () => {
     console.log(
-      `[HTTP] :${WEBHOOK_PORT} — 입금: POST /webhook/deposit, /api/deposit/sms | 본인인증: /auth/start, /auth/discord/callback, /auth/phone`
+      `[HTTP] ${HTTP_HOST}:${HTTP_PORT} — 입금: POST /webhook/deposit, /api/deposit/sms | 본인인증: /auth/start, /auth/discord/callback, /auth/phone`
     );
   });
+}
+
+if (process.env.RAILWAY_ENVIRONMENT) {
+  const ltcRpc = String(process.env.LITECOIN_RPC_URL || '').trim();
+  const btcRpc = String(process.env.BITCOIN_RPC_URL || '').trim();
+  if (/127\.0\.0\.1|localhost/i.test(ltcRpc)) {
+    console.warn('[Railway] LITECOIN_RPC_URL 이 localhost/127.0.0.1 입니다. 외부 접근 가능한 RPC URL을 사용하세요.');
+  }
+  if (/127\.0\.0\.1|localhost/i.test(btcRpc)) {
+    console.warn('[Railway] BITCOIN_RPC_URL 이 localhost/127.0.0.1 입니다. 외부 접근 가능한 RPC URL을 사용하세요.');
+  }
 }
 
 const DEPOSIT_CHANNEL_ID = process.env.DEPOSIT_CHANNEL_ID && String(process.env.DEPOSIT_CHANNEL_ID).trim();
