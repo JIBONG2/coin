@@ -311,6 +311,76 @@ async function refreshOtcPanelMessages() {
   await applyOtcPanelPayloadToTrackedMessages(payload);
 }
 
+function readTrackedPanelMapSafe() {
+  try {
+    if (!fs.existsSync(OTC_PANEL_FILE)) return {};
+    const map = JSON.parse(fs.readFileSync(OTC_PANEL_FILE, 'utf8'));
+    return map && typeof map === 'object' ? map : {};
+  } catch {
+    return {};
+  }
+}
+
+function countTrackedPanelRefs(map) {
+  let n = 0;
+  for (const gid of Object.keys(map || {})) n += panelRefsForGuild(map[gid]).length;
+  return n;
+}
+
+/**
+ * 추적 파일이 비어 있을 때, 최근 메시지에서 기존 OTC 패널을 자동 탐지해 다시 추적 등록.
+ * - 재배포/경로 변경 후 "/자판기패널" 재설치 없이 기존 패널 갱신 복구 목적
+ */
+async function discoverExistingPanelsIfTrackerEmpty() {
+  const currentMap = readTrackedPanelMapSafe();
+  if (countTrackedPanelRefs(currentMap) > 0) return;
+  if (!client?.isReady?.()) return;
+
+  let discovered = 0;
+  const me = client.user?.id;
+  if (!me) return;
+  const cap = getMaxPanelRefsPerGuild();
+
+  for (const [, guild] of client.guilds.cache) {
+    const found = [];
+    try {
+      const channels = await guild.channels.fetch();
+      for (const [, ch] of channels) {
+        if (!ch || !ch.isTextBased?.()) continue;
+        if (!ch.messages?.fetch) continue;
+        try {
+          const msgs = await ch.messages.fetch({ limit: 40 });
+          for (const [, m] of msgs) {
+            if (!m || m.author?.id !== me) continue;
+            const hasPanelMenu = (m.components || []).some((row) =>
+              (row.components || []).some((c) => c.customId === 'otc_main_select')
+            );
+            if (!hasPanelMenu) continue;
+            if (!found.some((r) => r.messageId === m.id)) {
+              found.push({ channelId: ch.id, messageId: m.id });
+              discovered += 1;
+            }
+            if (found.length >= cap) break;
+          }
+        } catch {
+          // 권한/히스토리 접근 불가 채널은 건너뜀
+        }
+        if (found.length >= cap) break;
+      }
+    } catch {
+      // 채널 목록 조회 실패 길드는 건너뜀
+    }
+    if (found.length > 0) currentMap[guild.id] = found;
+  }
+
+  if (discovered > 0) {
+    writeOtcPanelMap(currentMap);
+    console.log(`[패널] 기존 메시지 자동복구 완료: ${discovered}개 추적 등록`);
+  } else {
+    console.log('[패널] 자동복구: 기존 OTC 패널 메시지를 찾지 못했습니다.');
+  }
+}
+
 function getWalletBalanceWatchIntervalMs() {
   const sec = Number(process.env.WALLET_BALANCE_WATCH_SECONDS);
   if (Number.isFinite(sec) && sec >= 3) return Math.min(300, sec) * 1000;
@@ -1075,6 +1145,7 @@ client.on('messageCreate', async (message) => {
 client.once(Events.ClientReady, async (c) => {
   console.log(`로그인: ${c.user.tag}`);
   migrateLegacyPanelRefsIfNeeded();
+  await discoverExistingPanelsIfTrackerEmpty();
   reloadConfig();
   const memberR = tierRoles.getVendingMemberRoleIdFromRaw(config.raw);
   const tierMap = tierRoles.getTierRoleIdMapFromRaw(config.raw);
