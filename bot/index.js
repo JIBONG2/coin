@@ -130,6 +130,7 @@ const DATA_DIR_BOT = process.env.DATA_DIR
   ? path.resolve(String(process.env.DATA_DIR))
   : path.join(__dirname, 'data');
 const OTC_PANEL_FILE = path.join(DATA_DIR_BOT, 'otcPanelByGuild.json');
+const LEGACY_OTC_PANEL_FILE = path.join(__dirname, 'data', 'otcPanelByGuild.json');
 let walletBalanceWatcherTimer = null;
 
 function ensureDataDirBot() {
@@ -184,6 +185,46 @@ function panelRefsForGuild(raw) {
 function writeOtcPanelMap(map) {
   ensureDataDirBot();
   fs.writeFileSync(OTC_PANEL_FILE, JSON.stringify(map, null, 2), 'utf8');
+}
+
+function mergePanelMaps(baseMap, incomingMap) {
+  const out = baseMap && typeof baseMap === 'object' ? { ...baseMap } : {};
+  const src = incomingMap && typeof incomingMap === 'object' ? incomingMap : {};
+  const cap = getMaxPanelRefsPerGuild();
+  for (const gid of Object.keys(src)) {
+    const existing = panelRefsForGuild(out[gid]);
+    const incoming = panelRefsForGuild(src[gid]);
+    const byMsg = new Map();
+    for (const r of existing) byMsg.set(r.messageId, r);
+    for (const r of incoming) byMsg.set(r.messageId, r);
+    const merged = Array.from(byMsg.values());
+    while (merged.length > cap) merged.shift();
+    out[gid] = merged;
+  }
+  return out;
+}
+
+/** DATA_DIR 전환 후에도 기존(bot/data) 추적 패널을 이어받기 위한 1회 마이그레이션 */
+function migrateLegacyPanelRefsIfNeeded() {
+  if (path.resolve(LEGACY_OTC_PANEL_FILE) === path.resolve(OTC_PANEL_FILE)) return;
+  try {
+    const hasNew = fs.existsSync(OTC_PANEL_FILE);
+    const hasLegacy = fs.existsSync(LEGACY_OTC_PANEL_FILE);
+    if (!hasLegacy) return;
+    const legacyMap = JSON.parse(fs.readFileSync(LEGACY_OTC_PANEL_FILE, 'utf8'));
+    if (!legacyMap || typeof legacyMap !== 'object') return;
+    if (!hasNew) {
+      writeOtcPanelMap(legacyMap);
+      console.log('[패널] 기존 추적 목록(bot/data) -> DATA_DIR 로 마이그레이션 완료');
+      return;
+    }
+    const newMap = JSON.parse(fs.readFileSync(OTC_PANEL_FILE, 'utf8'));
+    const merged = mergePanelMaps(newMap, legacyMap);
+    writeOtcPanelMap(merged);
+    console.log('[패널] 기존 추적 목록 병합 완료 (legacy + DATA_DIR)');
+  } catch (e) {
+    console.warn('[패널] legacy 마이그레이션 실패:', e.message || e);
+  }
 }
 
 /** /자판기패널 마다 추적 — 길드당 최대 N개까지 자동 갱신 (이전 패널도 유지) */
@@ -1033,6 +1074,7 @@ client.on('messageCreate', async (message) => {
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`로그인: ${c.user.tag}`);
+  migrateLegacyPanelRefsIfNeeded();
   reloadConfig();
   const memberR = tierRoles.getVendingMemberRoleIdFromRaw(config.raw);
   const tierMap = tierRoles.getTierRoleIdMapFromRaw(config.raw);
